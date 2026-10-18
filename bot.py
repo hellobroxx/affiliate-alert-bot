@@ -11,7 +11,9 @@ Affiliate Alert Bot - v1 (Telegram, Rs 0 start)
 import os
 import sqlite3
 import logging
+import threading
 from datetime import datetime
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
@@ -172,9 +174,34 @@ async def postdeal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("CHANNEL_ID set nahi hai, isliye deal sirf DB me save hua:\n\n" + msg)
 
 
+def start_health_server():
+    """Render free web service ka health check pass karne ke liye
+    $PORT pe ek chhota HTTP server chalao. Polling bot khud koi port
+    nahi kholta, isliye iske bina Render deploy ko 'In progress' me
+    atka deta hai."""
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"ok")
+
+        def log_message(self, *args):
+            pass
+
+    port = int(os.environ.get("PORT", "10000"))
+    try:
+        server = HTTPServer(("0.0.0.0", port), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        logger.info("Health server on port %s", port)
+    except Exception as e:
+        logger.warning("Health server nahi chala: %s", e)
+
+
 def main():
     if not BOT_TOKEN:
         raise SystemExit("BOT_TOKEN env me set karo. .env.example dekho.")
+    start_health_server()  # Render ka health check pass ho, isliye $PORT pe suno
     get_db().close()
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
